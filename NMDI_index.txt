@@ -1,0 +1,394 @@
+var sentinel = ee.ImageCollection("COPERNICUS/S2"),
+    XB_china_border = ee.FeatureCollection("projects/ee-2418127013/assets/XB_china_border");
+
+//////////////////////////cropland/////////////////////////////////////////
+var CropLayer = require('users/Nimrod/Package:CropLayer');
+var crop = CropLayer.CropLayer();
+
+//////////////////////////cloud//////////////////////
+function maskS2clouds(image) {
+    var qa = image.select('QA60');
+    var cloudBitMask = Math.pow(2, 10);
+    var cirrusBitMask = Math.pow(2, 11);
+    var mask = qa.bitwiseAnd(cloudBitMask).eq(0).and(
+        qa.bitwiseAnd(cirrusBitMask).eq(0));
+    return image.updateMask(mask);
+}
+//////////////////////index//////////////////////
+var cal_ndvi = function(image) {
+    var time_start = image.get("system:time_start");
+    image = image.multiply(0.0001);
+    var blue = image.select('B2');
+    var green = image.select('B3');
+    var red = image.select('B4');
+    var vre1 = image.select('B5');
+    var vre2 = image.select('B6');
+    var vre3 = image.select('B7');
+    var nir = image.select('B8');
+    var vre4 = image.select('B8A');
+    var swir1 = image.select('B11');
+    var swir2 = image.select('B12');
+    var EVI2 = ((nir.subtract(red)).divide(nir.add(red.multiply(2.4)).add(1))).multiply(2.5).rename('EVI2');
+    var CARI_a = (vre1.subtract(green)).divide(150);
+    var CARI_b = green.subtract(CARI_a.multiply(550));
+    var CARI_1 = (((CARI_a.multiply(670)).add(red).add(CARI_b))).abs();
+    var CARI_2 = ((CARI_a.multiply(CARI_a)).add(1)).pow(0.5); //////////////
+    var CARI = (vre1.divide(red)).multiply(CARI_1.divide(CARI_2)).rename('CARI');
+    var NMDI = (nir.subtract(swir1.subtract(swir2))).divide(nir.add(swir1.subtract(swir2))).rename('NMDI');
+    return image.addBands(EVI2).addBands(CARI).addBands(NMDI).set("system:time_start", time_start);
+};
+///////////////////////////////////////////////////mosaic/////////////////////////////////////////
+var Date_Start = ee.Date('2020-03-20');
+var Date_End = ee.Date('2020-09-30');
+var n_days = Date_End.difference(Date_Start, 'day').round();
+var dates1 = ee.List.sequence(0, n_days, 10);
+var make_datelist = function(n) {
+    return Date_Start.advance(n, 'day');
+};
+var dates = dates1.map(make_datelist);
+var fnc = function(d1) {
+    var start = ee.Date(d1);
+    var time = ee.Date(d1).advance(4, 'day').millis();
+    var end = ee.Date(d1).advance(10, 'day');
+    var date_range = ee.DateRange(start, end);
+    var S1 = sentinel.filterDate(date_range).map(maskS2clouds);
+    var mosaic = S1.median().set('system:time_start', time);
+    return mosaic
+};
+var list_of_images = dates.map(fnc);
+var image_mosaic = ee.ImageCollection(list_of_images).filterBounds(XB_china_border).map(function clip(img) {
+    return img.clip(XB_china_border)
+});
+print(image_mosaic, 'image_mosaic')
+//////////////////////////////////插值///////////////////////////////////////////////
+var linear = function(imagecollection) {
+    var pkg_smooth = require('users/JFC/math:pkg_smooth.js');
+    var frame = 10 * 3;
+    var nodata = -9999;
+    var imgcol_index = pkg_smooth.linearInterp(imagecollection, frame, nodata);
+    return imgcol_index;
+}
+var image_mosaic_B2 = linear(image_mosaic.select('B2')).select('B2').sort('system:time_start');
+var image_mosaic_B3 = linear(image_mosaic.select('B3')).select('B3').sort('system:time_start');
+var image_mosaic_B4 = linear(image_mosaic.select('B4')).select('B4').sort('system:time_start');
+var image_mosaic_B5 = linear(image_mosaic.select('B5')).select('B5').sort('system:time_start');
+var image_mosaic_B6 = linear(image_mosaic.select('B6')).select('B6').sort('system:time_start');
+var image_mosaic_B7 = linear(image_mosaic.select('B7')).select('B7').sort('system:time_start');
+var image_mosaic_B8 = linear(image_mosaic.select('B8')).select('B8').sort('system:time_start');
+var image_mosaic_B8A = linear(image_mosaic.select('B8A')).select('B8A').sort('system:time_start');
+var image_mosaic_B11 = linear(image_mosaic.select('B11')).select('B11').sort('system:time_start');
+var image_mosaic_B12 = linear(image_mosaic.select('B12')).select('B12').sort('system:time_start');
+var image_mosaic_B1 = linear(image_mosaic.select('B1')).select('B1').sort('system:time_start');
+var imgcol_mosaic_linear1 = image_mosaic_B1.combine(image_mosaic_B2).combine(image_mosaic_B3).combine(image_mosaic_B4).combine(image_mosaic_B5).combine(image_mosaic_B6)
+    .combine(image_mosaic_B7).combine(image_mosaic_B8).combine(image_mosaic_B8A).combine(image_mosaic_B11).combine(image_mosaic_B12);
+var imgcol_mosaic_linear = imgcol_mosaic_linear1.sort('system:time_start');
+
+var imgcol = imgcol_mosaic_linear.map(cal_ndvi);
+var imgcol_EVI2_index1 = imgcol.select('EVI2');
+var imgcol_NMDI_index1 = imgcol.select('NMDI');
+
+//--------------------------------WS----------------------------------------------------
+/** Initialize weights ------------------------------------------------------ */
+function qc_EVI2(img) {
+    var w = img.select(0).mask();
+    return ee.Image(img.select('EVI2'))
+        .addBands(w)
+        .rename(['EVI2', 'w'])
+        .copyProperties(img, img.propertyNames());
+}
+
+function qc_NMDI(img) {
+    var w = img.select(0).mask();
+    return ee.Image(img.select('NMDI'))
+        .addBands(w)
+        .rename(['NMDI', 'w'])
+        .copyProperties(img, img.propertyNames());
+}
+var pkg_main = require('users/yingze/Math:pkg_main');
+var pkg_whit = require('users/yingze/Math:pkg_whit');
+/** GLOBAL FUNCTIONS -------------------------------------------------------- */
+var date2str = function(x) {
+    return ee.Date(x).format('YYYY_MM_dd');
+};
+/** ------------------------------------------------------------------------- */
+// MAIN SCRIPT 
+/** Initial parameters for whittaker smoother --------------------------- */
+var lambda = 10;
+var mask = imgcol_EVI2_index1.select('EVI2').mosaic().mask();
+/** 1. pre-process mask NA values and init weights */
+var imgcol_EVI2 = imgcol_EVI2_index1.map(function(img) {
+    // img = img.unmask(-1.0);
+    return ee.Image(qc_EVI2(img)).updateMask(mask);
+});
+var imgcol_NMDI = imgcol_NMDI_index1.map(function(img) {
+    // img = img.unmask(-1.0);
+    return ee.Image(qc_NMDI(img)).updateMask(mask);
+});
+
+/** 2. Whittaker smoother ------------------------------------------------------ */
+var options_whit = {
+    order: 2, // difference order
+    wFUN: pkg_whit.wBisquare_array, // weigths updating function
+    iters: 2, // Whittaker iterations
+    min_ValidPerc: 0, // pixel valid ratio less then `min_ValidPerc`, is not smoothed.
+    min_A: 0.02, // Amplitude A = ylu_max - ylu_min, points are masked if 
+    // A < min_A. If ylu not specified, min_A not work
+    missing: -0.05 // Missing value in band_sm are set to missing.
+    // matrixSolve = 1;  // whittaker, matrix solve option:
+    // 1:matrixSolve, 2:matrixCholeskyDecomposition, 3:matrixPseudoInverse 
+};
+var whit_EVI2 = pkg_whit.whit_imgcol(imgcol_EVI2, options_whit, lambda);
+var mat_zs_EVI2 = whit_EVI2.zs;
+var whit_NMDI = pkg_whit.whit_imgcol(imgcol_NMDI, options_whit, lambda);
+var mat_zs_NMDI = whit_NMDI.zs;
+// var mat_ws  = whit_EVI2.ws;
+/** 3. convert 2d array into multi-bands -------------------------------- */
+var datelist_EVI2 = ee.List(imgcol_EVI2.aggregate_array('system:time_start')).map(date2str);
+var ids_EVI2 = datelist_EVI2.map(function(val) {
+    return ee.String('b').cat(val);
+});
+var img_WS_EVI2_out = mat_zs_EVI2.arraySlice(1, 1, 2).arrayProject([0]).arrayFlatten([ids_EVI2]); //only select the last iter,日期必须唯一，否则出错
+var img_WS_NMDI_out = mat_zs_NMDI.arraySlice(1, 1, 2).arrayProject([0]).arrayFlatten([ids_EVI2]); //only select the last iter,日期必须唯一，否则出错
+
+////////////////////////////////////将EVI2转换成imgcollection//////////////////////////////////////////////////
+var img_WS_EVI2_out_toarray = img_WS_EVI2_out.toArray();
+
+function get_EVI2img(i) {
+    var subarray = img_WS_EVI2_out_toarray.arraySlice(0, ee.Number(i).int(), ee.Number(i).add(1).int());
+    return subarray.arrayProject([0]).arrayFlatten([
+        ['EVI2_WS']
+    ]);
+}
+var imgcol_EVI2_index1_tolist = imgcol_EVI2_index1.toList(imgcol_EVI2_index1.size());
+var runLength_EVI2 = ee.List.sequence(0, imgcol_EVI2_index1.size().subtract(1));
+var WS_EVI2 = ee.ImageCollection.fromImages(runLength_EVI2.map(function(i) {
+    var time = ee.Image(imgcol_EVI2_index1_tolist.get(ee.Number(i))).get('system:time_start');
+    return get_EVI2img(i).set('system:time_start', time)
+}));
+var avgsentinel_EVI2 = WS_EVI2;
+// print('WS_EVI2',avgsentinel_EVI2)
+/////////////////////////////////////////////////////////////////////////////
+var img_WS_NMDI_out_toarray = img_WS_NMDI_out.toArray();
+
+function get_NMDIimg(i) {
+    var subarray = img_WS_NMDI_out_toarray.arraySlice(0, ee.Number(i).int(), ee.Number(i).add(1).int());
+    return subarray.arrayProject([0]).arrayFlatten([
+        ['NMDI_WS']
+    ]);
+}
+var imgcol_NMDI_index1_tolist = imgcol_NMDI_index1.toList(imgcol_NMDI_index1.size());
+var runLength_NMDI = ee.List.sequence(0, imgcol_NMDI_index1.size().subtract(1));
+var WS_NMDI = ee.ImageCollection.fromImages(runLength_NMDI.map(function(i) {
+    var time = ee.Image(imgcol_NMDI_index1_tolist.get(ee.Number(i))).get('system:time_start');
+    return get_NMDIimg(i).set('system:time_start', time)
+}));
+var avgsentinel_NMDI = WS_NMDI;
+var WS_NMDI_tolist = WS_NMDI.toList(WS_NMDI.size());
+
+
+////////////////////////////////////////////////NMDI////////////////////////////////////////////////
+var diff = function(image_col_index) {
+    var image_col_index_tolist = image_col_index.toList(image_col_index.size());
+    var runLength_index = ee.List.sequence(0, image_col_index.size().subtract(2));
+    var index_cafen_growingperid = ee.ImageCollection.fromImages(runLength_index.map(function(i) {
+        var image_before = ee.Image(image_col_index_tolist.get(ee.Number(i)));
+        var image_after = ee.Image(image_col_index_tolist.get(ee.Number(i).add(1)));
+        var time = image_after.get('system:time_start');
+        var image_ca = image_after.subtract(image_before).set('system:time_start', time);
+        return image_ca;
+    }).flatten());
+    return index_cafen_growingperid
+}
+
+var NMDI_cafen = diff(WS_NMDI);
+print('NMDI_cafen', NMDI_cafen)
+var NMDI_cafen_tolist = NMDI_cafen.toList(NMDI_cafen.size());
+print("NMDI_cafen_tolist", NMDI_cafen_tolist)
+/////////////////////////////////////////////////////////////////////////////////
+var NMDI_cafen_1 = NMDI_cafen.map(function getimage(img) {
+    img = img.where(img.lt(0), -1);
+    img = img.where(img.gte(0), 1);
+    return img
+});
+///////////////////////////////////////////////////////////////////////////////////
+var NMDI_cafen_2 = diff(NMDI_cafen_1)
+
+
+var NMDI_cafen_2_tolist = NMDI_cafen_2.toList(NMDI_cafen_2.size());
+var runLength_NMDI_valley_peak = ee.List.sequence(0, NMDI_cafen_2_tolist.size().subtract(1));
+var NMDI_valley_peak_img = ee.ImageCollection.fromImages(runLength_NMDI_valley_peak.map(function(i) {
+    var image_valley_peak = ee.Image(NMDI_cafen_2_tolist.get(ee.Number(i)));
+    var image_valley_peak_num = ee.Image(0);
+    image_valley_peak_num = image_valley_peak_num.where(image_valley_peak.eq(2), 1);
+    image_valley_peak_num = image_valley_peak_num.where(image_valley_peak.eq(-2), 1);
+    var image_valley_peak1 = ee.Image(0);
+    image_valley_peak1 = image_valley_peak1.where(image_valley_peak.eq(2), (ee.Number(i).multiply(-1)));
+    image_valley_peak1 = image_valley_peak1.where(image_valley_peak.eq(-2), (ee.Number(i)));
+    image_valley_peak1 = image_valley_peak1.updateMask(image_valley_peak1.neq(0));
+    var image_NMDI_cafen = ee.Image(NMDI_cafen_tolist.get(ee.Number(i).add(1)));
+    var systime = image_valley_peak.get('system:time_start');
+    var day_num = ee.Number.parse(ee.Date(systime).difference(ee.Date('2020-12-31'), 'day')).toInt();
+    var day = ee.Image(1);
+    var image_day = day.multiply(day_num);
+    var image_constant = image_valley_peak_num.addBands(image_valley_peak1).addBands(image_day).toInt();
+
+    return image_constant.addBands(image_NMDI_cafen).set('system:time_start', systime).rename(['peak_valley_num', 'peak_valley_qi', 'peak_valley_day', 'NMDI_diff1_value']);
+}).flatten());
+
+var peak_numsum = NMDI_valley_peak_img.select('peak_valley_num').sum();
+
+
+////////////////////////////////////////////////////////////////////////////
+var imageAxis = 0;
+var bandAxis = 1;
+var NMDI_valley_peak_img_toarray = NMDI_valley_peak_img.toArray();
+//////////////////////////////////////////////////////////求NMDI最长连续下降时段的期数///////////////////////////////////////////////////////
+var NMDI_valley_peak1 = NMDI_valley_peak_img_toarray.arraySlice(imageAxis, 0, 1).arraySlice(bandAxis, 1, 2).arrayProject([0]).arrayFlatten([
+    ['NMDI_valley_peak']
+])
+var NMDI_valley_peak2 = NMDI_valley_peak_img_toarray.arraySlice(imageAxis, 1, 2).arraySlice(bandAxis, 1, 2).arrayProject([0]).arrayFlatten([
+    ['NMDI_valley_peak']
+])
+var NMDI_valley_peak3 = NMDI_valley_peak_img_toarray.arraySlice(imageAxis, 2, 3).arraySlice(bandAxis, 1, 2).arrayProject([0]).arrayFlatten([
+    ['NMDI_valley_peak']
+])
+var NMDI_valley_peak4 = NMDI_valley_peak_img_toarray.arraySlice(imageAxis, 3, 4).arraySlice(bandAxis, 1, 2).arrayProject([0]).arrayFlatten([
+    ['NMDI_valley_peak']
+])
+var NMDI_valley_peak5 = NMDI_valley_peak_img_toarray.arraySlice(imageAxis, 4, 5).arraySlice(bandAxis, 1, 2).arrayProject([0]).arrayFlatten([
+    ['NMDI_valley_peak']
+])
+var NMDI_valley_peak6 = NMDI_valley_peak_img_toarray.arraySlice(imageAxis, 5, 6).arraySlice(bandAxis, 1, 2).arrayProject([0]).arrayFlatten([
+    ['NMDI_valley_peak']
+])
+var NMDI_valley_peak0 = ee.Image(0);
+var NMDI_valley_peak_coll = ee.ImageCollection([NMDI_valley_peak0, NMDI_valley_peak1, NMDI_valley_peak2, NMDI_valley_peak3, NMDI_valley_peak4, NMDI_valley_peak5, NMDI_valley_peak6])
+var NMDI_valley_peak_list = NMDI_valley_peak_coll.toList(NMDI_valley_peak_coll.size());
+
+var runLength_NMDI_valley_peak_length = ee.List.sequence(0, 5);
+var NMDI_valley_peak_lengthqi_coll = ee.ImageCollection.fromImages(runLength_NMDI_valley_peak_length.map(function(i) {
+    var image_before = ee.Image(NMDI_valley_peak_list.get(ee.Number(i)));
+    var image_after = ee.Image(NMDI_valley_peak_list.get(ee.Number(i).add(1)));
+    image_after = image_after.updateMask(image_after.neq(0));
+    var near_length = image_after.add(image_before);
+    return near_length;
+}).flatten());
+
+
+var NMDI_valley_peak_lengthqi_max = NMDI_valley_peak_lengthqi_coll.min().abs();
+var time_star = NMDI_valley_peak_lengthqi_max.get('system:time_start');
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+var runLength_NMDI_diff = ee.List.sequence(0, NMDI_cafen_tolist.size().subtract(1));
+
+var NMDI_valley_peak_diff2 = ee.ImageCollection.fromImages(runLength_NMDI_diff.map(function(i) {
+    var image_valley_peak_qi = ee.Image(ee.Number(i).add(1)).toInt();
+    var image_NMDI_cafen = ee.Image(NMDI_cafen_tolist.get(ee.Number(i)))
+    var systime = image_NMDI_cafen.get('system:time_start');
+    var day_num = ee.Number.parse(ee.Date(systime).difference(ee.Date('2020-12-31'), 'day')).toInt();
+    var day = ee.Image(1);
+    var image_day = day.multiply(day_num).toInt();
+    var image_constant = image_NMDI_cafen.addBands(image_valley_peak_qi).addBands(image_day);
+    return image_constant.set('system:time_start', systime).rename(['NMDI_diff1', 'NMDI_qi', 'NMDI_day']);
+}).flatten());
+
+
+var cut0 = NMDI_valley_peak1.abs();
+var cut1 = NMDI_valley_peak2.abs();
+cut1 = cut1.updateMask(cut1.neq(0));
+var cut2 = NMDI_valley_peak3.abs();
+cut2 = cut2.updateMask(cut2.neq(0));
+var cut3 = NMDI_valley_peak4.abs();
+cut3 = cut3.updateMask(cut3.neq(0));
+var cut4 = NMDI_valley_peak5.abs();
+cut4 = cut4.updateMask(cut4.neq(0));
+var cut5 = NMDI_valley_peak6.abs();
+cut5 = cut5.updateMask(cut5.neq(0));
+//////////////////////////////////////////////////////
+var NMDI_valley_peak_diff2_tolist = NMDI_valley_peak_diff2.toList(NMDI_valley_peak_diff2.size());
+var runLength_NMDI_diff1 = ee.List.sequence(0, NMDI_cafen_tolist.size().subtract(1));
+
+var NMDI_diff0 = ee.ImageCollection.fromImages(runLength_NMDI_diff1.map(function(i) {
+    var image_qi = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_qi");
+    var image_diff = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_diff1");
+    image_diff = image_diff.updateMask(image_qi.gte(0).and(image_qi.lte(cut0.add(1))));
+    return image_diff;
+}).flatten());
+var NMDI_diff0_sum = NMDI_diff0.sum();
+///////////////////////////////////////////////////
+var NMDI_valley_peak_diff2_tolist = NMDI_valley_peak_diff2.toList(NMDI_valley_peak_diff2.size());
+var runLength_NMDI_diff1 = ee.List.sequence(0, NMDI_cafen_tolist.size().subtract(1));
+
+var NMDI_diff1 = ee.ImageCollection.fromImages(runLength_NMDI_diff1.map(function(i) {
+    var image_qi = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_qi");
+    var image_diff = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_diff1");
+    image_diff = image_diff.updateMask(image_qi.gt(cut0.add(1)).and(image_qi.lte(cut1.add(1))));
+    return image_diff;
+}).flatten());
+print(NMDI_diff1, 'NMDI_diff1');
+var NMDI_diff1_sum = NMDI_diff1.sum();
+////////////////////////////////////////////////////
+
+var NMDI_diff2 = ee.ImageCollection.fromImages(runLength_NMDI_diff1.map(function(i) {
+    var image_qi = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_qi");
+    var image_diff = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_diff1");
+    image_diff = image_diff.updateMask(image_qi.gt(cut1.add(1)).and(image_qi.lte(cut2.add(1))));
+    return image_diff;
+}).flatten());
+var NMDI_diff2_sum = NMDI_diff2.sum();
+//////////////////////////////////////////////////////////////
+
+var NMDI_diff3 = ee.ImageCollection.fromImages(runLength_NMDI_diff1.map(function(i) {
+    var image_qi = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_qi");
+    var image_diff = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_diff1");
+    image_diff = image_diff.updateMask(image_qi.gt(cut2.add(1)).and(image_qi.lte(cut3.add(1))));
+    return image_diff;
+}).flatten());
+var NMDI_diff3_sum = NMDI_diff3.sum();
+
+///////////////////////////////////////////////////////////////
+
+var NMDI_diff4 = ee.ImageCollection.fromImages(runLength_NMDI_diff1.map(function(i) {
+    var image_qi = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_qi");
+    var image_diff = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_diff1");
+    image_diff = image_diff.updateMask(image_qi.gt(cut3.add(1)).and(image_qi.lte(cut4.add(1))));
+    return image_diff;
+}).flatten());
+var NMDI_diff4_sum = NMDI_diff4.sum();
+////////////////////////////////////////////////////
+
+var NMDI_diff5 = ee.ImageCollection.fromImages(runLength_NMDI_diff1.map(function(i) {
+    var image_qi = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_qi");
+    var image_diff = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_diff1");
+    image_diff = image_diff.updateMask(image_qi.gt(cut4.add(1)).and(image_qi.lte(cut5.add(1))));
+    return image_diff;
+}).flatten());
+var NMDI_diff5_sum = NMDI_diff5.sum();
+////////////////////////////////////////////////////////////////
+
+var NMDI_diff6 = ee.ImageCollection.fromImages(runLength_NMDI_diff1.map(function(i) {
+    var image_qi = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_qi");
+    var image_diff = ee.Image(NMDI_valley_peak_diff2_tolist.get(ee.Number(i))).select("NMDI_diff1");
+    image_diff = image_diff.updateMask(image_qi.gt(cut5.add(1)));
+    return image_diff;
+}).flatten());
+var NMDI_diff6_sum = NMDI_diff6.sum();
+
+//////////////////////////////////////////////////////////////
+var NMDI_diff_coll = ee.ImageCollection([NMDI_diff0_sum, NMDI_diff1_sum, NMDI_diff2_sum, NMDI_diff3_sum, NMDI_diff4_sum, NMDI_diff5_sum, NMDI_diff6_sum]);
+var NMDI_diff_sum_max = NMDI_diff_coll.min();
+
+//////////////////////////////////////////////////////////////
+var NMDI_qiLength_multiply_diffSUM = NMDI_diff_sum_max.multiply(NMDI_valley_peak_lengthqi_max).multiply(100).toInt32().updateMask(crop.gt(0)) //.clip(heilongjiang);
+Map.addLayer(NMDI_qiLength_multiply_diffSUM, {}, 'NMDI_qiLength_multiply_diffSUM', false);
+
+
+Export.image.toAsset({
+    image: NMDI_valley_peak_lengthqi_max.toInt32(),
+    description: "NMDI_peak_valley_lengthqi_max_2020_XB_china_border", 
+    assetId: "Spring_wheat_Index/NMDI_peak_valley_lengthqi_max_2020_XB_china_border",
+    region: XB_china_border,
+    maxPixels: 1e13,
+    scale: 10,
+    crs: "EPSG:4326",
+});

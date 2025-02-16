@@ -1,0 +1,216 @@
+var XB_china_border = ee.FeatureCollection("projects/ee-2418127013/assets/XB_china_border"),
+    sentinel = ee.ImageCollection("COPERNICUS/S2");
+//////////////////////////cropland/////////////////////////////////////////
+var CropLayer = require('users/Nimrod/Package:CropLayer');
+var crop = CropLayer.CropLayer();
+
+////////////////////cloud//////////////////////
+function maskS2clouds(image) {
+    var qa = image.select('QA60');
+    var cloudBitMask = Math.pow(2, 10);
+    var cirrusBitMask = Math.pow(2, 11);
+    var mask = qa.bitwiseAnd(cloudBitMask).eq(0).and(
+        qa.bitwiseAnd(cirrusBitMask).eq(0));
+    return image.updateMask(mask);
+}
+////////////////////index//////////////////////
+var cal_ndvi=function(image){
+  var time_start = image.get("system:time_start");  
+  image=image.multiply(0.0001);
+  var blue=image.select('B2');
+  var green=image.select('B3');
+  var red=image.select('B4');
+  var vre1=image.select('B5');
+  var vre2=image.select('B6');
+  var vre3=image.select('B7');
+  var nir=image.select('B8');
+  var vre4=image.select('B8A');
+  var swir1=image.select('B11');
+  var swir2=image.select('B12');
+  var EVI2=((nir.subtract(red)).divide(nir.add(red.multiply(2.4)).add(1))).multiply(2.5).rename('EVI2');
+  var CARI_a=(vre1.subtract(green)).divide(150);
+  var CARI_b=green.subtract(CARI_a.multiply(550));
+  var CARI_1=(((CARI_a.multiply(670)).add(red).add(CARI_b))).abs();
+  var CARI_2=((CARI_a.multiply(CARI_a)).add(1)).pow(0.5);
+  var CARI=(vre1.divide(red)).multiply(CARI_1.divide(CARI_2)).rename('CARI');
+  return image.addBands(EVI2).addBands(CARI).set("system:time_start", time_start);
+};
+///////////////////////mosaic/////////////////////////////////////////
+var Date_Start = ee.Date('2020-03-20');
+var Date_End = ee.Date('2020-09-30');
+var n_days = Date_End.difference(Date_Start,'day').round();
+var dates1 = ee.List.sequence(0,n_days,10);
+var make_datelist = function(n) {
+  return Date_Start.advance(n,'day');
+};
+var dates = dates1.map(make_datelist);
+var fnc = function(d1) {
+  var start = ee.Date(d1);
+  var time =ee.Date(d1).advance(4,'day').millis();
+  var end = ee.Date(d1).advance(10,'day');
+  var date_range = ee.DateRange(start,end);
+var S1 = sentinel.filterDate(date_range).map(maskS2clouds);
+  var mosaic =S1.median().set('system:time_start',time);
+  return mosaic
+};
+var list_of_images = dates.map(fnc);
+var image_mosaic = ee.ImageCollection(list_of_images).filterBounds(XB_china_border).map(function clip(img){return img.clip(XB_china_border)});
+print(image_mosaic,'image_mosaic')
+/////////////////////////////////////////////////////
+var  linear=function(imagecollection){
+var pkg_smooth = require('users/JFC/math:pkg_smooth.js');
+var frame  = 10*3; 
+var nodata = -9999;
+var imgcol_index = pkg_smooth.linearInterp(imagecollection, frame, nodata);
+return imgcol_index;
+}
+var image_mosaic_B2 = linear(image_mosaic.select('B2')).select('B2').sort('system:time_start');var image_mosaic_B3 = linear(image_mosaic.select('B3')).select('B3').sort('system:time_start');
+var image_mosaic_B4 = linear(image_mosaic.select('B4')).select('B4').sort('system:time_start');var image_mosaic_B5 = linear(image_mosaic.select('B5')).select('B5').sort('system:time_start');
+var image_mosaic_B6 = linear(image_mosaic.select('B6')).select('B6').sort('system:time_start');var image_mosaic_B7 = linear(image_mosaic.select('B7')).select('B7').sort('system:time_start');
+var image_mosaic_B8 = linear(image_mosaic.select('B8')).select('B8').sort('system:time_start');var image_mosaic_B8A = linear(image_mosaic.select('B8A')).select('B8A').sort('system:time_start');
+var image_mosaic_B11 = linear(image_mosaic.select('B11')).select('B11').sort('system:time_start');var image_mosaic_B12 = linear(image_mosaic.select('B12')).select('B12').sort('system:time_start');
+var image_mosaic_B1 = linear(image_mosaic.select('B1')).select('B1').sort('system:time_start');
+var imgcol_mosaic_linear1=image_mosaic_B1.combine(image_mosaic_B2).combine(image_mosaic_B3).combine(image_mosaic_B4).combine(image_mosaic_B5).combine(image_mosaic_B6)
+                        .combine(image_mosaic_B7).combine(image_mosaic_B8).combine(image_mosaic_B8A).combine(image_mosaic_B11).combine(image_mosaic_B12);
+var imgcol_mosaic_linear=imgcol_mosaic_linear1.sort('system:time_start');
+var imgcol = imgcol_mosaic_linear.map(cal_ndvi);
+var imgcol_EVI2_index1 = imgcol.select('EVI2');
+var imgcol_CARI_index1 = imgcol.select('CARI');
+//--------------------------------WS平滑----------------------------------------------------
+/** Initialize weights ------------------------------------------------------ */
+function qc_EVI2(img) {
+    var w= img.select(0).mask(); 
+    return ee.Image(img.select('EVI2'))
+        .addBands(w)
+        .rename(['EVI2', 'w'])
+        .copyProperties(img, img.propertyNames());
+}
+function qc_CARI(img) {
+    var w= img.select(0).mask(); 
+    return ee.Image(img.select('CARI'))
+        .addBands(w)
+        .rename(['CARI', 'w'])
+        .copyProperties(img, img.propertyNames());
+}
+var pkg_main   = require('users/yingze/Math:pkg_main');
+var pkg_whit   = require('users/yingze/Math:pkg_whit');
+/** GLOBAL FUNCTIONS -------------------------------------------------------- */
+var date2str = function(x) { return ee.Date(x).format('YYYY_MM_dd'); };
+/** ------------------------------------------------------------------------- */
+// MAIN SCRIPT 
+    /** Initial parameters for whittaker smoother --------------------------- */
+    var lambda = 10;
+    var mask       = imgcol_EVI2_index1.select('EVI2').mosaic().mask(); 
+    /** 1. pre-process mask NA values and init weights */
+        var imgcol_EVI2 = imgcol_EVI2_index1.map(function(img) {
+        // img = img.unmask(-1.0);
+        return ee.Image(qc_EVI2(img)).updateMask(mask);
+    });
+      var imgcol_CARI = imgcol_CARI_index1.map(function(img) {
+        // img = img.unmask(-1.0);
+        return ee.Image(qc_CARI(img)).updateMask(mask);
+    });
+       
+    /** 2. Whittaker smoother ------------------------------------------------------ */
+    var options_whit = {
+        order        : 2,    // difference order
+        wFUN         : pkg_whit.wBisquare_array, // weigths updating function
+        iters        : 2,    // Whittaker iterations
+        min_ValidPerc: 0,    // pixel valid ratio less then `min_ValidPerc`, is not smoothed.
+        min_A        : 0.02, // Amplitude A = ylu_max - ylu_min, points are masked if 
+                            // A < min_A. If ylu not specified, min_A not work
+        missing      : -0.05 // Missing value in band_sm are set to missing.
+        // matrixSolve = 1;  // whittaker, matrix solve option:
+        // 1:matrixSolve, 2:matrixCholeskyDecomposition, 3:matrixPseudoInverse 
+    };
+    var whit_EVI2= pkg_whit.whit_imgcol(imgcol_EVI2, options_whit, lambda);
+    var mat_zs_EVI2  = whit_EVI2.zs;
+    var whit_CARI= pkg_whit.whit_imgcol(imgcol_CARI, options_whit, lambda);
+    var mat_zs_CARI  = whit_CARI.zs;
+        // var mat_ws  = whit_EVI2.ws;
+    /** 3. convert 2d array into multi-bands -------------------------------- */    
+    var datelist_EVI2 = ee.List(imgcol_EVI2.aggregate_array('system:time_start')).map(date2str);
+    var ids_EVI2 = datelist_EVI2.map(function(val){ return ee.String('b').cat(val); }); 
+    var img_WS_EVI2_out = mat_zs_EVI2.arraySlice(1,1,2).arrayProject([0]).arrayFlatten([ids_EVI2]);
+    var img_WS_CARI_out = mat_zs_CARI.arraySlice(1,1,2).arrayProject([0]).arrayFlatten([ids_EVI2]);
+///////////////////////////////////////////////////////////////////////////
+  var img_WS_EVI2_out_toarray=img_WS_EVI2_out.toArray();
+  function get_EVI2img(i) {
+  var subarray = img_WS_EVI2_out_toarray.arraySlice(0, ee.Number(i).int(), ee.Number(i).add(1).int());
+  return subarray.arrayProject([0]).arrayFlatten([['EVI2_WS']]);  
+  }
+  var imgcol_EVI2_index1_tolist=imgcol_EVI2_index1.toList(imgcol_EVI2_index1.size());
+  var runLength_EVI2=ee.List.sequence(0, imgcol_EVI2_index1.size().subtract(1));
+    var WS_EVI2 = ee.ImageCollection.fromImages(runLength_EVI2.map(function(i) {
+  var time=ee.Image(imgcol_EVI2_index1_tolist.get(ee.Number(i))).get('system:time_start');
+  return get_EVI2img(i).set('system:time_start',time)
+  }));
+  var avgsentinel_EVI2 = WS_EVI2;
+
+  /////////////////////////////////////////////////////////////////////////////
+  var img_WS_CARI_out_toarray=img_WS_CARI_out.toArray();
+  function get_CARIimg(i) {
+  var subarray = img_WS_CARI_out_toarray.arraySlice(0, ee.Number(i).int(), ee.Number(i).add(1).int());
+  return subarray.arrayProject([0]).arrayFlatten([['CARI_WS']]);  
+  }
+  var imgcol_CARI_index1_tolist=imgcol_CARI_index1.toList(imgcol_CARI_index1.size());
+  var runLength_CARI=ee.List.sequence(0, imgcol_CARI_index1.size().subtract(1));
+    var WS_CARI = ee.ImageCollection.fromImages(runLength_CARI.map(function(i) {
+  var time=ee.Image(imgcol_CARI_index1_tolist.get(ee.Number(i))).get('system:time_start');
+  return get_CARIimg(i).set('system:time_start',time)
+  }));
+  var avgsentinel_CARI = WS_CARI;
+  
+////////////////////////////////////////////////////////////////////////////////////////////
+// var CARI_maskimage_tolist=CARI_maskimage.toList(CARI_maskimage.size());
+var runLength_CARI_maskimage = ee.List.sequence(0, imgcol_CARI_index1.size().subtract(2));
+var CARI_cafen=ee.ImageCollection.fromImages(runLength_CARI_maskimage.map(function(i) {
+  var image_before=ee.Image(imgcol_CARI_index1_tolist.get(ee.Number(i)));
+  var image_after=ee.Image(imgcol_CARI_index1_tolist.get(ee.Number(i).add(1)));
+  var image_ca=image_after.subtract(image_before);
+  return image_ca;
+}).flatten());
+//////////////////////////////////////////////////////////////////////////////////////////
+var runLength_EVI2_maskimage = ee.List.sequence(0, imgcol_EVI2_index1.size().subtract(2));
+var EVI2_cafen=ee.ImageCollection.fromImages(runLength_EVI2_maskimage.map(function(i) {
+  var image_before=ee.Image(imgcol_EVI2_index1_tolist.get(ee.Number(i)));
+  var image_after=ee.Image(imgcol_EVI2_index1_tolist.get(ee.Number(i).add(1)));
+  var image_ca=image_after.subtract(image_before);
+  return image_ca;
+}).flatten());
+///////////////////////////////////////////////////////////////////////////////////////////
+var EVI2_cafen_List=EVI2_cafen.toList(EVI2_cafen.size());
+var CARI_cafen_List=CARI_cafen.toList(CARI_cafen.size());
+
+var runLength_diffEVI2_CARI_mul = ee.List.sequence(0, CARI_cafen_List.size().subtract(1));
+var mul_diff_EVI2_CARI=ee.ImageCollection.fromImages(runLength_diffEVI2_CARI_mul.map(function(i) {
+  var image_diffEVI2=ee.Image(EVI2_cafen_List.get(ee.Number(i)));
+  var image_diffCARI=ee.Image(CARI_cafen_List.get(ee.Number(i)));
+  var image_mul=image_diffEVI2.multiply(image_diffCARI);
+  return image_mul;
+}).flatten());
+
+///////////////////////////////////////////////////////////////////////////////////////////
+var mul_diff_EVI2_CARI_List=mul_diff_EVI2_CARI.toList(mul_diff_EVI2_CARI.size());
+var runLength_negdiff_CARIabsSUM = ee.List.sequence(0, mul_diff_EVI2_CARI_List.size().subtract(1));
+var negdiff_CARIabsSUM=ee.ImageCollection.fromImages(runLength_negdiff_CARIabsSUM.map(function(i) {
+  var zero=ee.Image(0);
+  var image_mul_diff=ee.Image(mul_diff_EVI2_CARI_List.get(ee.Number(i)));
+  var image_neg=zero.where(image_mul_diff.lt(0),1);
+  return image_neg;
+}).flatten());
+Map.addLayer(negdiff_CARIabsSUM,{},'negdiff_CARIabsSUM');
+var SUM_negdiff_qi=negdiff_CARIabsSUM.sum().updateMask(crop.gt(0));
+print('SUM_negdiff_qi',SUM_negdiff_qi);
+ Map.addLayer(SUM_negdiff_qi,{},'SUM_negdiff_qi');
+
+///////////////////////toAsset//////////////////////
+ Export.image.toAsset({
+  image:SUM_negdiff_qi.toInt32(),
+  description:"CARI_2020_",
+  assetId:"projects/ee-g1083018/assets/CARI_2020/CARI_2020",
+  region:XB_china_border,
+  maxPixels:1e13,
+  scale:10,
+  crs:"EPSG:4326",
+});
