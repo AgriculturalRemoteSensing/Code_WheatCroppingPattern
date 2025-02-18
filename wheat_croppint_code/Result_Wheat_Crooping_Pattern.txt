@@ -1,0 +1,80 @@
+var MultiWheatresult = require('users/Nimrod/Package:2019-2024_result');
+////////Results of wheat planting patterns from 2019 to 2024
+var Couple_U_china_2019_result=MultiWheatresult.Couple_U_china_2019_result();
+var wheat_WG_china_2019_result=MultiWheatresult.wheat_WG_china_2019_result();
+var wheat_GZ_china_2019_result=MultiWheatresult.wheat_GZ_china_2019_result();
+var wheat_rice_china_2019_result=MultiWheatresult.wheat_rice_china_2019_result();
+var wheat_H_china_2019_result=MultiWheatresult.wheat_H_china_2019_result();
+var wheat_maize_china_2019_result=MultiWheatresult.wheat_maize_china_2019_result();
+var wheat_others_china_2019_result=MultiWheatresult.wheat_others_china_2019_result();
+var Couple_U_china_2020_result=MultiWheatresult.Couple_U_china_2020_result();
+var wheat_WG_china_2020_result=MultiWheatresult.wheat_WG_china_2020_result();
+var wheat_GZ_china_2020_result=MultiWheatresult.wheat_GZ_china_2020_result();
+var wheat_rice_china_2020_result=MultiWheatresult.wheat_rice_china_2020_result();
+var wheat_H_china_2020_result=MultiWheatresult.wheat_H_china_2020_result();
+var wheat_maize_china_2020_result=MultiWheatresult.wheat_maize_china_2020_result();
+var wheat_others_china_2020_result=MultiWheatresult.wheat_others_china_2020_result();
+var Couple_U_china_2021_result=MultiWheatresult.Couple_U_china_2021_result();
+var wheat_WG_china_2021_result=MultiWheatresult.wheat_WG_china_2021_result();
+var wheat_GZ_china_2021_result=MultiWheatresult.wheat_GZ_china_2021_result();
+var wheat_rice_china_2021_result=MultiWheatresult.wheat_rice_china_2021_result();
+var wheat_H_china_2021_result=MultiWheatresult.wheat_H_china_2021_result();
+var wheat_maize_china_2021_result=MultiWheatresult.wheat_maize_china_2021_result();
+var wheat_others_china_2021_result=MultiWheatresult.wheat_others_china_2021_result();
+var Couple_U_china_2022_result=MultiWheatresult.Couple_U_china_2022_result();
+var wheat_WG_china_2022_result=MultiWheatresult.wheat_WG_china_2022_result();
+var wheat_GZ_china_2022_result=MultiWheatresult.wheat_GZ_china_2022_result();
+var wheat_rice_china_2022_result=MultiWheatresult.wheat_rice_china_2022_result();
+var wheat_H_china_2022_result=MultiWheatresult.wheat_H_china_2022_result();
+var wheat_maize_china_2022_result=MultiWheatresult.wheat_maize_china_2022_result();
+var wheat_others_china_2022_result=MultiWheatresult.wheat_others_china_2022_result();
+var Couple_U_china_2023_result=MultiWheatresult.Couple_U_china_2023_result();
+var wheat_WG_china_2023_result=MultiWheatresult.wheat_WG_china_2023_result();
+var wheat_GZ_china_2023_result=MultiWheatresult.wheat_GZ_china_2023_result();
+var wheat_rice_china_2023_result=MultiWheatresult.wheat_rice_china_2023_result();
+var wheat_H_china_2023_result=MultiWheatresult.wheat_H_china_2023_result();
+var wheat_maize_china_2023_result=MultiWheatresult.wheat_maize_china_2023_result();
+var wheat_others_china_2023_result=MultiWheatresult.wheat_others_china_2023_result();
+
+////////2019//////
+Map.addLayer(Couple_U_china_2019_result,{palette:['#FF82AB']},'winterwheat_2019',false);          ////winterwheat
+Map.addLayer(wheat_WG_china_2019_result,{palette:['#9932CC']},'singlewheat_2019',false);          ////singlewheat
+Map.addLayer(wheat_GZ_china_2019_result,{palette:['#3A5FCD']},'wheat_rotation_2019',false);       ////wheat_rotation
+Map.addLayer(wheat_rice_china_2019_result,{palette:['#3CB371']},'wheat_rice_2019',false);         ////wheat_rice
+Map.addLayer(wheat_H_china_2019_result,{palette:['#8B6914']},'wheat_uplandcrop_2019',false);      ////wheat_uplandcrop
+Map.addLayer(wheat_maize_china_2019_result,{palette:['#FF8247']},'wheat_maize_2019',false);       ////wheat_maize
+Map.addLayer(wheat_others_china_2019_result,{palette:['#9932CC']},'wheat_others_2019',false);     ////wheat_others
+////////2020//////
+Map.addLayer(Couple_U_china_2020_result,{palette:['#FF82AB']},'winterwheat_2020',false);          ////winterwheat
+Map.addLayer(wheat_WG_china_2020_result,{palette:['#9932CC']},'singlewheat_2020',false);          ////singlewheat
+Map.addLayer(wheat_GZ_china_2020_result,{palette:['#3A5FCD']},'wheat_rotation_2020',false);       ////wheat_rotation
+Map.addLayer(wheat_rice_china_2020_result,{palette:['#3CB371']},'wheat_rice_2020',false);         ////wheat_rice
+Map.addLayer(wheat_H_china_2020_result,{palette:['#8B6914']},'wheat_uplandcrop_2020',false);      ////wheat_uplandcrop
+Map.addLayer(wheat_maize_china_2020_result,{palette:['#FF8247']},'wheat_maize_2020',false);       ////wheat_maize
+Map.addLayer(wheat_others_china_2020_result,{palette:['#9932CC']},'wheat_others_2020',false);     ////wheat_others
+////////2021//////
+Map.addLayer(Couple_U_china_2021_result,{palette:['#FF82AB']},'winterwheat_2021',false);          ////winterwheat
+Map.addLayer(wheat_WG_china_2021_result,{palette:['#9932CC']},'singlewheat_2021',false);          ////singlewheat
+Map.addLayer(wheat_GZ_china_2021_result,{palette:['#3A5FCD']},'wheat_rotation_2021',false);       ////wheat_rotation
+Map.addLayer(wheat_rice_china_2021_result,{palette:['#3CB371']},'wheat_rice_2021',false);         ////wheat_rice
+Map.addLayer(wheat_H_china_2021_result,{palette:['#8B6914']},'wheat_uplandcrop_2021',false);      ////wheat_uplandcrop
+Map.addLayer(wheat_maize_china_2021_result,{palette:['#FF8247']},'wheat_maize_2021',false);       ////wheat_maize
+Map.addLayer(wheat_others_china_2021_result,{palette:['#9932CC']},'wheat_others_2021',false);     ////wheat_others
+////////2022////// 
+Map.addLayer(Couple_U_china_2022_result,{palette:['#FF82AB']},'winterwheat_2022',false);          ////winterwheat
+Map.addLayer(wheat_WG_china_2022_result,{palette:['#9932CC']},'singlewheat_2022',false);          ////singlewheat
+Map.addLayer(wheat_GZ_china_2022_result,{palette:['#3A5FCD']},'wheat_rotation_2022',false);       ////wheat_rotation
+Map.addLayer(wheat_rice_china_2022_result,{palette:['#3CB371']},'wheat_rice_2022',false);         ////wheat_rice
+Map.addLayer(wheat_H_china_2022_result,{palette:['#8B6914']},'wheat_uplandcrop_2022',false);      ////wheat_uplandcrop
+Map.addLayer(wheat_maize_china_2022_result,{palette:['#FF8247']},'wheat_maize_2022',false);       ////wheat_maize
+Map.addLayer(wheat_others_china_2022_result,{palette:['#9932CC']},'wheat_others_2022',false);     ////wheat_others
+////////2023//////
+Map.addLayer(Couple_U_china_2023_result,{palette:['#FF82AB']},'winterwheat_2023',false);          ////winterwheat
+Map.addLayer(wheat_WG_china_2023_result,{palette:['#9932CC']},'singlewheat_2023',false);          ////singlewheat
+Map.addLayer(wheat_GZ_china_2023_result,{palette:['#3A5FCD']},'wheat_rotation_2023',false);       ////wheat_rotation
+Map.addLayer(wheat_rice_china_2023_result,{palette:['#3CB371']},'wheat_rice_2023',false);         ////wheat_rice
+Map.addLayer(wheat_H_china_2023_result,{palette:['#8B6914']},'wheat_uplandcrop_2023',false);      ////wheat_uplandcrop
+Map.addLayer(wheat_maize_china_2023_result,{palette:['#FF8247']},'wheat_maize_2023',false);       ////wheat_maize
+Map.addLayer(wheat_others_china_2023_result,{palette:['#9932CC']},'wheat_others_2023',false);     ////wheat_others
+
+
